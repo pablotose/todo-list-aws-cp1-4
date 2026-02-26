@@ -81,7 +81,7 @@ pipeline {
           sam build
 
           # Prueba para usar el fichero de samconfig y hacer el deploy en base a ese fichero
-          sam deploy --config-env staging --no-fail-on-empty-changeset
+          sam deploy --config-env staging --no-confirm-changeset  --no-fail-on-empty-changeset
 
           # Obtener BaseUrlApi del stack (Outputs)
           BASE_URL=$(aws cloudformation describe-stacks \
