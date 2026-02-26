@@ -6,7 +6,7 @@ pipeline {
   }
 
   environment {
-    // Ajusta esto si tu repo tiene otro nombre
+    // Ajusta esto si tu repo tiene otro nombre. Debido a que he tenido que crear otro repositorio.
     REPO_URL   = "https://github.com/pablotose/todo-list-aws-cp1-3.git"
 
     REGION     = "us-east-1"
@@ -85,6 +85,8 @@ pipeline {
 
           # Deploy NO guiado (obligatorio automatizado)
           sam deploy \
+	    ## Esta conf es porque me esta dando error del bucket de s3, prueba para comprobar que no venga del fichero samconfig ara el --guided
+            --no-config-file \
             --stack-name "${STACK_NAME}" \
             --region "${REGION}" \
             --capabilities CAPABILITY_IAM \
