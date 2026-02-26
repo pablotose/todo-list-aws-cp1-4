@@ -21,7 +21,6 @@ pipeline {
 
     stage('Get Code') {
       steps {
-        // En multibranch normalmente bastaría "checkout scm".
         // Aquí lo dejamos explícito para asegurar develop (como pide el enunciado).
         checkout([$class: 'GitSCM',
           branches: [[name: '*/develop']],
@@ -44,7 +43,6 @@ pipeline {
           pip install --upgrade pip
           pip install flake8 bandit pytest boto3
 
-          # Si el repo trae requirements, instalarlos
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
@@ -61,15 +59,14 @@ pipeline {
           set -euxo pipefail
           source "${VENV}/bin/activate"
 
-          # SOLO src/ (como pide la guía)
-          # No quality gates: aunque haya findings, no falla (exit-zero / || true)
+          
           flake8 src --exit-zero --tee --output-file "${REPORT_DIR}/flake8/flake8.txt" || true
           bandit -r src -f txt -o "${REPORT_DIR}/bandit/bandit.txt" || true
         '''
       }
       post {
         always {
-          // Publica los ficheros como artifacts (válido para entrega)
+          // Publica los ficheros como artifacts
           archiveArtifacts artifacts: 'reports/**', fingerprint: true
         }
       }
@@ -80,20 +77,11 @@ pipeline {
         sh '''#!/bin/bash
           set -euxo pipefail
 
+          sam validate --region us-east-1
           sam build
-          sam validate --region "${REGION}"
 
-          # Deploy NO guiado (obligatorio automatizado)
-          sam deploy \
-	    ## Esta conf es porque me esta dando error del bucket de s3, prueba para comprobar que no venga del fichero samconfig ara el --guided
-            --no-config-file \
-            --stack-name "${STACK_NAME}" \
-            --region "${REGION}" \
-            --capabilities CAPABILITY_IAM \
-            --no-confirm-changeset \
-            --resolve-s3 \
-            --no-fail-on-empty-changeset \
-            --parameter-overrides Stage="${STAGE}"
+          # Prueba para usar el fichero de samconfig y hacer el deploy en base a ese fichero
+          sam deploy --config-env staging --no-fail-on-empty-changeset
 
           # Obtener BaseUrlApi del stack (Outputs)
           BASE_URL=$(aws cloudformation describe-stacks \
