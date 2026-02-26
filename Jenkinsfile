@@ -10,7 +10,7 @@ pipeline {
     REPO_URL   = "https://github.com/pablotose/todo-list-aws-cp1-3.git"
 
     REGION     = "us-east-1"
-    STACK_NAME = "todo-list-aws-staging"
+    STACK_NAME = "todo-list-aws"
     STAGE      = "Staging"
 
     VENV       = ".venv"
