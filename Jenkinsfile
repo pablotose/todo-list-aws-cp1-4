@@ -41,7 +41,7 @@ pipeline {
           source "${VENV}/bin/activate"
 
           pip install --upgrade pip
-          pip install flake8 bandit pytest boto3
+          pip install flake8 bandit pytest boto3 requests
 
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
