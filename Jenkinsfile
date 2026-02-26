@@ -89,6 +89,7 @@ pipeline {
             --region "${REGION}" \
             --capabilities CAPABILITY_IAM \
             --no-confirm-changeset \
+            --resolve-s3 \
             --no-fail-on-empty-changeset \
             --parameter-overrides Stage="${STAGE}"
 
