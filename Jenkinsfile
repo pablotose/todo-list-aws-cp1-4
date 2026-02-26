@@ -81,7 +81,7 @@ pipeline {
           set -euxo pipefail
 
           sam build
-          sam validate
+          sam validate --region "${REGION}"
 
           # Deploy NO guiado (obligatorio automatizado)
           sam deploy \
