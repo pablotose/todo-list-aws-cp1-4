@@ -7,7 +7,7 @@ pipeline {
   }
 
   environment {
-    REPO_URL        = "https://github.com/pablotose/todo-list-aws-cp1-3.git"
+    REPO_URL        = "https://github.com/pablotose/todo-list-aws-cp1-4.git"
     CONFIG_REPO_URL = "https://github.com/pablotose/todo-list-aws-config.git"
 
     REGION     = "us-east-1"
