@@ -181,7 +181,7 @@ aws iam get-role --role-name LabRole
             git pull "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
 
             # Merge develop -> master
-            git merge --no-ff develop -m "Promote: merge develop into master"
+            git merge --no-ff origin/develop -m "Promote: merge develop into master"
 
             # Push master
             git push "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
