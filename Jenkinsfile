@@ -83,7 +83,7 @@ pipeline {
           sam validate --region us-east-1
           sam build
 
-ws sts get-caller-identity
+aws sts get-caller-identity
 
 echo "Checking IAM role LabRole exists..."
 aws iam get-role --role-name LabRole
