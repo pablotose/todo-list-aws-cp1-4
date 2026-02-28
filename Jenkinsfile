@@ -79,7 +79,7 @@ pipeline {
 
           # Evita que SAM inyecte s3_bucket desde samconfig.toml. Error obtenido en esta etapa
           rm -f samconfig.toml
-          rm -f .aws-sam
+          rm -rf .aws-sam
           sam validate --region us-east-1
           sam build --use-container --clean
 
