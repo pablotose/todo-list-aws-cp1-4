@@ -7,7 +7,9 @@ pipeline {
   }
 
   environment {
-    REPO_URL   = "https://github.com/pablotose/todo-list-aws-cp1-3.git"
+    REPO_URL        = "https://github.com/pablotose/todo-list-aws-cp1-4.git"
+    CONFIG_REPO_URL = "https://github.com/pablotose/todo-list-aws-config.git"
+
     REGION     = "us-east-1"
     STACK_NAME = "todo-list-aws"
   }
@@ -27,6 +29,7 @@ pipeline {
           echo "==========================="
         '''
 
+        // Código (master)
         checkout([$class: 'GitSCM',
           branches: [[name: '*/master']],
           userRemoteConfigs: [[
@@ -35,7 +38,16 @@ pipeline {
           ]]
         ])
 
-        // Compartir código con los agentes
+        // Config (production) -> samconfig.toml
+        sh '''#!/bin/bash
+          set -euxo pipefail
+          rm -rf config-repo
+          git clone -b production "${CONFIG_REPO_URL}" config-repo
+          cp config-repo/samconfig.toml .
+          echo "== samconfig.toml (production) =="
+          cat samconfig.toml
+        '''
+
         stash name: 'src', includes: '**/*'
       }
     }
@@ -59,18 +71,15 @@ pipeline {
         sh '''#!/bin/bash
           set -euxo pipefail
 
-          rm -f samconfig.toml
           rm -rf .aws-sam
 
           sam validate --region "${REGION}"
           sam build
 
+          # Deploy usando samconfig.toml (production)
           sam deploy \
             --region "${REGION}" \
             --stack-name "${STACK_NAME}" \
-            --resolve-s3 \
-            --force-upload \
-            --parameter-overrides Stage=production \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
 
@@ -84,7 +93,6 @@ pipeline {
           echo "Production API Base URL: ${BASE_URL}"
         '''
 
-        // Pasar URL al agente REST
         stash name: 'baseurl', includes: 'base_url.env'
       }
     }
@@ -150,7 +158,8 @@ pipeline {
         '''
       }
     }
-  }
+
+  } // stages
 
   post {
     always {
