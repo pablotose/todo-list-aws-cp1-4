@@ -1,89 +1,85 @@
 pipeline {
-agent any
+  agent any
 
-options {
-timestamps()
-skipDefaultCheckout(true)
-}
-
-environment {
-REPO_URL = "https://github.com/pablotose/todo-list-aws-cp1-3.git
-"
-REGION = "us-east-1"
-STACK_NAME = "todo-list-aws"
-VENV = ".venv"
-}
-
-stages {
-
-stage('Get Code') {
-  steps {
-    checkout([$class: 'GitSCM',
-      branches: [[name: '*/master']],
-      userRemoteConfigs: [[
-        url: "${REPO_URL}",
-        credentialsId: 'github-token'
-      ]]
-    ])
+  options {
+    timestamps()
+    skipDefaultCheckout(true)
   }
-}
 
-stage('Deploy (Production)') {
-  steps {
-    sh '''
-      set -euxo pipefail
-
-      rm -f samconfig.toml
-      rm -rf .aws-sam
-
-      sam validate --region ${REGION}
-      sam build
-
-      sam deploy \
-        --region ${REGION} \
-        --stack-name ${STACK_NAME} \
-        --resolve-s3 \
-        --force-upload \
-        --parameter-overrides Stage=production \
-        --no-confirm-changeset \
-        --no-fail-on-empty-changeset
-
-      BASE_URL=$(aws cloudformation describe-stacks \
-        --region ${REGION} \
-        --stack-name ${STACK_NAME} \
-        --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" \
-        --output text)
-
-      echo "BASE_URL=${BASE_URL}" > base_url.env
-    '''
+  environment {
+    REPO_URL   = "https://github.com/pablotose/todo-list-aws-cp1-3.git"
+    REGION     = "us-east-1"
+    STACK_NAME = "todo-list-aws"
   }
-}
 
-stage('Rest Test (Read Only)') {
-  steps {
-    sh '''
-      set -e
-      source base_url.env
+  stages {
 
-      echo "Testing production API: ${BASE_URL}"
+    stage('Get Code') {
+      steps {
+        checkout([$class: 'GitSCM',
+          branches: [[name: '*/master']],
+          userRemoteConfigs: [[
+            url: "${REPO_URL}",
+            credentialsId: 'github-token'
+          ]]
+        ])
+      }
+    }
 
-      echo "== GET /todos =="
-      curl -sS -i "${BASE_URL}/todos"
+    stage('Deploy (Production)') {
+      steps {
+        sh '''#!/bin/bash
+          set -euxo pipefail
 
-      echo "== GET /todos/{id} (solo si existen datos) =="
+          rm -f samconfig.toml
+          rm -rf .aws-sam
 
-      # No hacemos POST, PUT ni DELETE para no modificar producción
+          sam validate --region "${REGION}"
+          sam build
 
-      echo "REST READ TEST PASSED"
-    '''
+          sam deploy \
+            --region "${REGION}" \
+            --stack-name "${STACK_NAME}" \
+            --resolve-s3 \
+            --force-upload \
+            --parameter-overrides Stage=production \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+          BASE_URL=$(aws cloudformation describe-stacks \
+            --region "${REGION}" \
+            --stack-name "${STACK_NAME}" \
+            --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" \
+            --output text)
+
+          echo "BASE_URL=${BASE_URL}" > base_url.env
+          echo "Production API Base URL: ${BASE_URL}"
+        '''
+      }
+    }
+
+    stage('Rest Test (Read Only)') {
+      steps {
+        sh '''#!/bin/bash
+          set -e
+          source base_url.env
+
+          echo "Testing production API (read-only): ${BASE_URL}"
+
+          echo "== GET /todos =="
+          curl -sf --max-time 10 "${BASE_URL}/todos"
+          echo ""
+          echo "GET /todos OK"
+
+          echo "✅ REST READ-ONLY TEST PASSED"
+        '''
+      }
+    }
   }
-}
 
-}
-
-post {
-always {
-echo "CD Pipeline finished with status: ${currentBuild.currentResult}"
-}
-}
+  post {
+    always {
+      echo "CD Pipeline finished with status: ${currentBuild.currentResult}"
+    }
+  }
 }
