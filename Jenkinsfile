@@ -80,8 +80,13 @@ pipeline {
           sam validate --region us-east-1
           sam build
 
-          # Prueba para usar el fichero de samconfig y hacer el deploy en base a ese fichero
-          sam deploy --config-env staging --no-confirm-changeset  --no-fail-on-empty-changeset
+          sam deploy \
+            --region "${REGION}" \
+            --stack-name "${STACK_NAME}-stg" \
+            --resolve-s3 \
+            --parameter-overrides Stage=staging \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
 
           # Obtener BaseUrlApi del stack (Outputs)
           BASE_URL=$(aws cloudformation describe-stacks \
