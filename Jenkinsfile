@@ -127,18 +127,18 @@ stage('Rest Test (curl)') {
       echo "POST response: $RESP_POST"
 
       # Extraer ID (soporta proxy response con body string o json directo)
-      TODO_ID=$(printf "%s" "$RESP_POST" | python3 - <<'PY'
+TODO_ID=$(python3 - "$RESP_POST" <<'PY'
 import json, sys
-raw = sys.stdin.read().strip()
+raw = sys.argv[1].strip()
 j = json.loads(raw)
 
-# Si viene proxy response: {"statusCode":200,"body":"{...}"}
 if isinstance(j, dict) and "body" in j and isinstance(j["body"], str):
     j = json.loads(j["body"])
 
 print(j.get("id",""))
 PY
 )
+
 
       if [ -z "$TODO_ID" ]; then
         echo "No pude extraer TODO_ID del POST"
