@@ -119,47 +119,38 @@ stage('Rest Test (curl)') {
 
       echo "Testing API: ${BASE_URL}"
 
-      # 1) POST -> guardamos respuesta
-      RESP_POST=$(curl -sf -X POST "${BASE_URL}/todos" \
+      RESP_POST=$(curl -sf --max-time 10 -X POST "${BASE_URL}/todos" \
         -H "Content-Type: application/json" \
         -d '{ "text": "Test desde Jenkins" }')
 
       echo "POST response: $RESP_POST"
 
-      # Extraer ID (soporta proxy response con body string o json directo)
-TODO_ID=$(python3 - "$RESP_POST" <<'PY'
+      TODO_ID=$(python3 - "$RESP_POST" <<'PY'
 import json, sys
 raw = sys.argv[1].strip()
 j = json.loads(raw)
-
 if isinstance(j, dict) and "body" in j and isinstance(j["body"], str):
     j = json.loads(j["body"])
-
 print(j.get("id",""))
 PY
 )
 
-
-      if [ -z "$TODO_ID" ]; then
-        echo "No pude extraer TODO_ID del POST"
-        exit 1
-      fi
-
       echo "TODO_ID=$TODO_ID"
+      [ -n "$TODO_ID" ]
 
-      # 2) GET list
-      curl -sf "${BASE_URL}/todos" >/dev/null
+      curl -sf --max-time 10 "${BASE_URL}/todos" >/dev/null
+      echo "GET /todos OK"
 
-      # 3) GET by id
-      curl -sf "${BASE_URL}/todos/${TODO_ID}" >/dev/null
+      curl -sf --max-time 10 "${BASE_URL}/todos/${TODO_ID}" >/dev/null
+      echo "GET /todos/{id} OK"
 
-      # 4) PUT by id
-      curl -sf -X PUT "${BASE_URL}/todos/${TODO_ID}" \
+      curl -sf --max-time 10 -X PUT "${BASE_URL}/todos/${TODO_ID}" \
         -H "Content-Type: application/json" \
         -d '{ "text": "Texto actualizado" }' >/dev/null
+      echo "PUT OK"
 
-      # 5) DELETE by id
-      curl -sf -X DELETE "${BASE_URL}/todos/${TODO_ID}" >/dev/null
+      curl -sf --max-time 10 -X DELETE "${BASE_URL}/todos/${TODO_ID}" >/dev/null
+      echo "DELETE OK"
 
       echo "✅ REST TEST PASSED (CRUD completo)"
     '''
