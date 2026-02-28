@@ -19,11 +19,17 @@ pipeline {
 
     stage('Get Code') {
       steps {
-echo "== AGENT INFO (Promote) =="
-whoami
-hostname
-pwd
-echo "=========================="
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Get Code) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "==========================="
+        '''
+
         checkout([$class: 'GitSCM',
           branches: [[name: '*/develop']],
           userRemoteConfigs: [[
@@ -32,7 +38,7 @@ echo "=========================="
           ]]
         ])
 
-        // Compartir código con los agentes
+        // Compartir código con los agentes (sin .git)
         stash name: 'src', includes: '**/*'
       }
     }
@@ -40,11 +46,17 @@ echo "=========================="
     stage('Static Test (agent: static)') {
       agent { label 'static' }
       steps {
-echo "== AGENT INFO (Promote) =="
-whoami
-hostname
-pwd
-echo "=========================="
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Static Test) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "================================"
+        '''
+
         deleteDir()
         unstash 'src'
 
@@ -60,7 +72,6 @@ echo "=========================="
           mkdir -p "${REPORT_DIR}/flake8"
           mkdir -p "${REPORT_DIR}/bandit"
 
-          # Solo /src (como pide el enunciado)
           flake8 src --exit-zero --tee --output-file "${REPORT_DIR}/flake8/flake8.txt" || true
           bandit -r src -f txt -o "${REPORT_DIR}/bandit/bandit.txt" || true
         '''
@@ -74,11 +85,17 @@ echo "=========================="
 
     stage('Deploy (Staging)') {
       steps {
-echo "== AGENT INFO (Promote) =="
-whoami
-hostname
-pwd
-echo "=========================="
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Deploy) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "========================="
+        '''
+
         deleteDir()
         unstash 'src'
 
@@ -122,11 +139,17 @@ echo "=========================="
     stage('Rest Test (curl) (agent: rest)') {
       agent { label 'rest' }
       steps {
-echo "== AGENT INFO (Promote) =="
-whoami
-hostname
-pwd
-echo "=========================="
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Rest Test) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "============================"
+        '''
+
         deleteDir()
         unstash 'src'
         unstash 'baseurl'
@@ -170,49 +193,49 @@ PY
       }
     }
 
-stage('Promote') {
-  steps {
-    // Asegura repo git real (con .git)
-    checkout([$class: 'GitSCM',
-      branches: [[name: '*/develop']],
-      userRemoteConfigs: [[
-        url: "${REPO_URL}",
-        credentialsId: 'github-token'
-      ]]
-    ])
+    stage('Promote') {
+      steps {
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Promote) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "=========================="
+        '''
 
-    withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PAT')]) {
-      sh '''#!/bin/bash
-        set -euxo pipefail
+        // IMPORTANTE: checkout para tener .git y poder hacer merge
+        checkout([$class: 'GitSCM',
+          branches: [[name: '*/develop']],
+          userRemoteConfigs: [[
+            url: "${REPO_URL}",
+            credentialsId: 'github-token'
+          ]]
+        ])
 
-        echo "== AGENT INFO (Promote) =="
-        echo "NODE_NAME=$NODE_NAME"
-        echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
-        whoami
-        hostname
-        pwd
-        echo "=========================="
+        withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PAT')]) {
+          sh '''#!/bin/bash
+            set -euxo pipefail
 
-        git config user.email "jenkins@local"
-        git config user.name  "jenkins"
+            git config user.email "jenkins@local"
+            git config user.name  "jenkins"
 
-        git fetch origin
+            git fetch origin
 
-        # Cambiar a master
-        git checkout master || git checkout -b master origin/master
+            git checkout master || git checkout -b master origin/master
+            git pull "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
 
-        # Pull master autenticado
-        git pull "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
+            git merge --no-ff origin/develop -m "Promote: merge develop into master"
 
-        # Merge develop -> master
-        git merge --no-ff origin/develop -m "Promote: merge develop into master"
-
-        # Push master
-        git push "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
-      '''
+            git push "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
+          '''
+        }
+      }
     }
-  }
-} 
+
+  } // <-- cierre correcto de stages
 
   post {
     always {
