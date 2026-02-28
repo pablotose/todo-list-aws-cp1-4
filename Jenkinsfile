@@ -163,9 +163,6 @@ aws iam get-role --role-name LabRole
 }
 
     stage('Promote') {
-      when {
-        branch 'develop'
-      }
       steps {
         withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PAT')]) {
           sh '''#!/bin/bash
