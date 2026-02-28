@@ -99,7 +99,7 @@ sam deploy \
 
           sam deploy \
             --region "${REGION}" \
-            --stack-name "${STACK_NAME}-stg" \
+            --stack-name "${STACK_NAME}" \
             --resolve-s3 \
             --parameter-overrides Stage=staging \
             --no-confirm-changeset \
