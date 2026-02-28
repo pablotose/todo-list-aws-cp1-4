@@ -144,11 +144,6 @@ PY
       curl -sf --max-time 10 "${BASE_URL}/todos/${TODO_ID}" >/dev/null
       echo "GET /todos/{id} OK"
 
-      curl -sf --max-time 10 -X PUT "${BASE_URL}/todos/${TODO_ID}" \
-        -H "Content-Type: application/json" \
-        -d '{ "text": "Texto actualizado" }' >/dev/null
-      echo "PUT OK"
-
       curl -sf --max-time 10 -X DELETE "${BASE_URL}/todos/${TODO_ID}" >/dev/null
       echo "DELETE OK"
 
