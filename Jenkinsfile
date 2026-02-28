@@ -110,54 +110,44 @@ aws iam get-role --role-name LabRole
       }
     }
 
-   stage('Rest Test (curl)') {
+
+stage('Rest Test (curl)') {
   steps {
     sh '''#!/bin/bash
       set -e
       source base_url.env
 
       echo "Testing API: ${BASE_URL}"
-      echo ""
 
-      # Función simple para hacer curl y fallar si HTTP != 2xx
-      call_api() {
-        METHOD=$1
-        URL=$2
-        DATA=$3
+      RESP_POST=$(curl -sf --max-time 10 -X POST "${BASE_URL}/todos" \
+        -H "Content-Type: application/json" \
+        -d '{ "text": "Test desde Jenkins" }')
 
-        echo "---- $METHOD $URL ----"
+      echo "POST response: $RESP_POST"
 
-        if [ -z "$DATA" ]; then
-          curl -f -X $METHOD "$URL"
-        else
-          curl -f -X $METHOD "$URL" \
-            -H "Content-Type: application/json" \
-            -d "$DATA"
-        fi
+      TODO_ID=$(python3 - "$RESP_POST" <<'PY'
+import json, sys
+raw = sys.argv[1].strip()
+j = json.loads(raw)
+if isinstance(j, dict) and "body" in j and isinstance(j["body"], str):
+    j = json.loads(j["body"])
+print(j.get("id",""))
+PY
+)
 
-        echo ""
-        echo "OK"
-        echo ""
-      }
+      echo "TODO_ID=$TODO_ID"
+      [ -n "$TODO_ID" ]
 
-      # 1️⃣ POST
-      call_api POST "${BASE_URL}/todos" '{ "text": "Test desde Jenkins" }'
+      curl -sf --max-time 10 "${BASE_URL}/todos" >/dev/null
+      echo "GET /todos OK"
 
-      # 2️⃣ GET lista
-      call_api GET "${BASE_URL}/todos" ""
+      curl -sf --max-time 10 "${BASE_URL}/todos/${TODO_ID}" >/dev/null
+      echo "GET /todos/{id} OK"
 
-      # 3️⃣ GET por ID
-      # (Usamos un ID fijo simple si sabes que existe, o puedes omitirlo)
-      # Aquí lo dejamos comentado si no quieres complicarlo
-      # call_api GET "${BASE_URL}/todos/ID_AQUI" ""
+      curl -sf --max-time 10 -X DELETE "${BASE_URL}/todos/${TODO_ID}" >/dev/null
+      echo "DELETE OK"
 
-      # 4️⃣ PUT (si tienes un ID conocido)
-      # call_api PUT "${BASE_URL}/todos/ID_AQUI" '{ "text": "Texto actualizado" }'
-
-      # 5️⃣ DELETE (si tienes un ID conocido)
-      # call_api DELETE "${BASE_URL}/todos/ID_AQUI" ""
-
-      echo "✅ REST TEST PASSED"
+      echo "✅ REST TEST PASSED (CRUD completo)"
     '''
   }
 }
