@@ -81,7 +81,7 @@ pipeline {
           rm -f samconfig.toml
           rm -rf .aws-sam
           sam validate --region us-east-1
-          sam build --use-container --clean
+          sam build --use-container
 
 aws sts get-caller-identity
 
