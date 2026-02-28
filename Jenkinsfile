@@ -110,57 +110,61 @@ aws iam get-role --role-name LabRole
       }
     }
 
-   stage('Rest Test (curl)') {
+
+stage('Rest Test (curl)') {
   steps {
     sh '''#!/bin/bash
       set -e
       source base_url.env
 
       echo "Testing API: ${BASE_URL}"
-      echo ""
 
-      # Función simple para hacer curl y fallar si HTTP != 2xx
-      call_api() {
-        METHOD=$1
-        URL=$2
-        DATA=$3
+      # 1) POST -> guardamos respuesta
+      RESP_POST=$(curl -sf -X POST "${BASE_URL}/todos" \
+        -H "Content-Type: application/json" \
+        -d '{ "text": "Test desde Jenkins" }')
 
-        echo "---- $METHOD $URL ----"
+      echo "POST response: $RESP_POST"
 
-        if [ -z "$DATA" ]; then
-          curl -f -X $METHOD "$URL"
-        else
-          curl -f -X $METHOD "$URL" \
-            -H "Content-Type: application/json" \
-            -d "$DATA"
-        fi
+      # Extraer ID (soporta proxy response con body string o json directo)
+      TODO_ID=$(python3 - <<'PY'
+import json, sys
+raw = sys.stdin.read()
+j = json.loads(raw)
+if isinstance(j, dict) and "body" in j and isinstance(j["body"], str):
+    j2 = json.loads(j["body"])
+else:
+    j2 = j
+print(j2.get("id",""))
+PY
+<<< "$RESP_POST")
 
-        echo ""
-        echo "OK"
-        echo ""
-      }
+      if [ -z "$TODO_ID" ]; then
+        echo "No pude extraer TODO_ID del POST"
+        exit 1
+      fi
 
-      # 1️⃣ POST
-      call_api POST "${BASE_URL}/todos" '{ "text": "Test desde Jenkins" }'
+      echo "TODO_ID=$TODO_ID"
 
-      # 2️⃣ GET lista
-      call_api GET "${BASE_URL}/todos" ""
+      # 2) GET list
+      curl -sf "${BASE_URL}/todos" >/dev/null
 
-      # 3️⃣ GET por ID
-      # (Usamos un ID fijo simple si sabes que existe, o puedes omitirlo)
-      # Aquí lo dejamos comentado si no quieres complicarlo
-      # call_api GET "${BASE_URL}/todos/ID_AQUI" ""
+      # 3) GET by id
+      curl -sf "${BASE_URL}/todos/${TODO_ID}" >/dev/null
 
-      # 4️⃣ PUT (si tienes un ID conocido)
-      # call_api PUT "${BASE_URL}/todos/ID_AQUI" '{ "text": "Texto actualizado" }'
+      # 4) PUT by id
+      curl -sf -X PUT "${BASE_URL}/todos/${TODO_ID}" \
+        -H "Content-Type: application/json" \
+        -d '{ "text": "Texto actualizado" }' >/dev/null
 
-      # 5️⃣ DELETE (si tienes un ID conocido)
-      # call_api DELETE "${BASE_URL}/todos/ID_AQUI" ""
+      # 5) DELETE by id
+      curl -sf -X DELETE "${BASE_URL}/todos/${TODO_ID}" >/dev/null
 
-      echo "✅ REST TEST PASSED"
+      echo "✅ REST TEST PASSED (CRUD completo)"
     '''
   }
 }
+
 
     stage('Promote') {
       steps {
