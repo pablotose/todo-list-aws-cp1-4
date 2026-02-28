@@ -138,13 +138,13 @@ PY
       echo "TODO_ID=$TODO_ID"
       [ -n "$TODO_ID" ]
 
-      curl -sf --max-time 10 "${BASE_URL}/todos" >/dev/null
+      curl -sf --max-time 10 "${BASE_URL}/todos"
       echo "GET /todos OK"
 
-      curl -sf --max-time 10 "${BASE_URL}/todos/${TODO_ID}" >/dev/null
+      curl -sf --max-time 10 "${BASE_URL}/todos/${TODO_ID}"
       echo "GET /todos/{id} OK"
 
-      curl -sf --max-time 10 -X DELETE "${BASE_URL}/todos/${TODO_ID}" >/dev/null
+      curl -sf --max-time 10 -X DELETE "${BASE_URL}/todos/${TODO_ID}"
       echo "DELETE OK"
 
       echo "✅ REST TEST PASSED (CRUD completo)"
