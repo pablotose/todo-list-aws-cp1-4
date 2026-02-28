@@ -7,7 +7,9 @@ pipeline {
   }
 
   environment {
-    REPO_URL   = "https://github.com/pablotose/todo-list-aws-cp1-3.git"
+    REPO_URL        = "https://github.com/pablotose/todo-list-aws-cp1-3.git"
+    CONFIG_REPO_URL = "https://github.com/pablotose/todo-list-aws-config.git"
+
     REGION     = "us-east-1"
     STACK_NAME = "todo-list-aws"
 
@@ -30,6 +32,7 @@ pipeline {
           echo "==========================="
         '''
 
+        // Código (develop)
         checkout([$class: 'GitSCM',
           branches: [[name: '*/develop']],
           userRemoteConfigs: [[
@@ -38,7 +41,17 @@ pipeline {
           ]]
         ])
 
-        // Compartir código con los agentes (sin .git)
+        // Config (staging) -> samconfig.toml
+        sh '''#!/bin/bash
+          set -euxo pipefail
+          rm -rf config-repo
+          git clone -b staging "${CONFIG_REPO_URL}" config-repo
+          cp config-repo/samconfig.toml .
+          echo "== samconfig.toml (staging) =="
+          cat samconfig.toml
+        '''
+
+        // Compartir con agentes
         stash name: 'src', includes: '**/*'
       }
     }
@@ -72,6 +85,7 @@ pipeline {
           mkdir -p "${REPORT_DIR}/flake8"
           mkdir -p "${REPORT_DIR}/bandit"
 
+          # Solo /src (como pide el enunciado)
           flake8 src --exit-zero --tee --output-file "${REPORT_DIR}/flake8/flake8.txt" || true
           bandit -r src -f txt -o "${REPORT_DIR}/bandit/bandit.txt" || true
         '''
@@ -102,25 +116,26 @@ pipeline {
         sh '''#!/bin/bash
           set -euxo pipefail
 
-          rm -f samconfig.toml
+          # Limpieza build local
           rm -rf .aws-sam
 
+          # Validar / Build
           sam validate --region "${REGION}"
           sam build
 
+          # (Opcional, pero útil en logs)
           aws sts get-caller-identity
           echo "Checking IAM role LabRole exists..."
           aws iam get-role --role-name LabRole
 
+          # Deploy NO interactivo usando samconfig.toml (staging)
           sam deploy \
             --region "${REGION}" \
             --stack-name "${STACK_NAME}" \
-            --resolve-s3 \
-            --force-upload \
-            --parameter-overrides Stage=staging \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
 
+          # Obtener BaseUrlApi del stack (Outputs)
           BASE_URL=$(aws cloudformation describe-stacks \
             --region "${REGION}" \
             --stack-name "${STACK_NAME}" \
@@ -131,7 +146,7 @@ pipeline {
           echo "API Base URL: ${BASE_URL}"
         '''
 
-        // Pasar la URL al agente REST
+        // Pasar URL al agente REST
         stash name: 'baseurl', includes: 'base_url.env'
       }
     }
@@ -160,12 +175,14 @@ pipeline {
 
           echo "Testing API: ${BASE_URL}"
 
+          # POST
           RESP_POST=$(curl -sf --max-time 10 -X POST "${BASE_URL}/todos" \
             -H "Content-Type: application/json" \
             -d '{ "text": "Test desde Jenkins" }')
 
           echo "POST response: $RESP_POST"
 
+          # Extraer TODO_ID (soporta body string dentro del JSON)
           TODO_ID=$(python3 - "$RESP_POST" <<'PY'
 import json, sys
 raw = sys.argv[1].strip()
@@ -175,16 +192,18 @@ if isinstance(j, dict) and "body" in j and isinstance(j["body"], str):
 print(j.get("id",""))
 PY
 )
-
           echo "TODO_ID=$TODO_ID"
           [ -n "$TODO_ID" ]
 
+          # GET lista
           curl -sf --max-time 10 "${BASE_URL}/todos"
           echo "GET /todos OK"
 
+          # GET por id
           curl -sf --max-time 10 "${BASE_URL}/todos/${TODO_ID}"
           echo "GET /todos/{id} OK"
 
+          # DELETE
           curl -sf --max-time 10 -X DELETE "${BASE_URL}/todos/${TODO_ID}"
           echo "DELETE OK"
 
@@ -206,7 +225,7 @@ PY
           echo "=========================="
         '''
 
-        // IMPORTANTE: checkout para tener .git y poder hacer merge
+        // IMPORTANTE: checkout para tener .git (stash/unstash no lo incluye)
         checkout([$class: 'GitSCM',
           branches: [[name: '*/develop']],
           userRemoteConfigs: [[
@@ -235,7 +254,7 @@ PY
       }
     }
 
-  } // <-- cierre correcto de stages
+  } // stages
 
   post {
     always {
