@@ -77,6 +77,9 @@ pipeline {
         sh '''#!/bin/bash
           set -euxo pipefail
 
+          # Evita que SAM inyecte s3_bucket desde samconfig.toml. Error obtenido en esta etapa
+          rm -f samconfig.toml
+
           sam validate --region us-east-1
           sam build
 
