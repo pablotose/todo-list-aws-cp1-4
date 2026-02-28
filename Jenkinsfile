@@ -80,6 +80,14 @@ pipeline {
           sam validate --region us-east-1
           sam build
 
+echo "== Workspace files =="
+ls -la
+echo "== samconfig.toml (if any) =="
+test -f samconfig.toml && cat samconfig.toml || echo "No samconfig.toml"
+echo "== Environment variables (filtered) =="
+env | egrep -i 'sam|s3|bucket' || true
+
+
           sam deploy \
             --region "${REGION}" \
             --stack-name "${STACK_NAME}-stg" \
