@@ -88,15 +88,6 @@ aws sts get-caller-identity
 echo "Checking IAM role LabRole exists..."
 aws iam get-role --role-name LabRole
 
-sam deploy \
-  --region "${REGION}" \
-  --stack-name "${STACK_NAME}-stg" \
-  --resolve-s3 \
-  --parameter-overrides Stage=staging \
-  --no-confirm-changeset \
-  --no-fail-on-empty-changeset
-
-
           sam deploy \
             --region "${REGION}" \
             --stack-name "${STACK_NAME}" \
