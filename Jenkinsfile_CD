@@ -67,11 +67,31 @@ pipeline {
           echo "Testing production API (read-only): ${BASE_URL}"
 
           echo "== GET /todos =="
-          curl -sf --max-time 10 "${BASE_URL}/todos"
-          echo ""
-          echo "GET /todos OK"
+RESP=$(curl -sS --max-time 10 -w "\nHTTP:%{http_code}\n" "${BASE_URL}/todos")
+echo "$RESP"
 
-          echo "✅ REST READ-ONLY TEST PASSED"
+HTTP=$(echo "$RESP" | tail -n1 | sed 's/HTTP://')
+if [ "$HTTP" -lt 200 ] || [ "$HTTP" -ge 300 ]; then
+  echo "ERROR: GET /todos failed"
+  exit 1
+fi
+
+BODY=$(echo "$RESP" | head -n -1)
+
+# Si hay elementos, probar GET por id
+if [ "$BODY" != "[]" ]; then
+  ID=$(echo "$BODY" | python3 -c "import sys, json; print(json.load(sys.stdin)[0]['id'])")
+
+  echo "== GET /todos/${ID} =="
+  RESP2=$(curl -sS --max-time 10 -w "\nHTTP:%{http_code}\n" "${BASE_URL}/todos/${ID}")
+  echo "$RESP2"
+
+  HTTP2=$(echo "$RESP2" | tail -n1 | sed 's/HTTP://')
+  if [ "$HTTP2" -lt 200 ] || [ "$HTTP2" -ge 300 ]; then
+    echo "ERROR: GET /todos/{id} failed"
+    exit 1
+  fi
+fi
         '''
       }
     }
