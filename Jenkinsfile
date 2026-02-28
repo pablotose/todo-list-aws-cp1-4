@@ -79,9 +79,9 @@ pipeline {
 
           # Evita que SAM inyecte s3_bucket desde samconfig.toml. Error obtenido en esta etapa
           rm -f samconfig.toml
-
+          rm -f .aws-sam
           sam validate --region us-east-1
-          sam build
+          sam build --use-container --clean
 
 aws sts get-caller-identity
 
@@ -92,6 +92,7 @@ aws iam get-role --role-name LabRole
             --region "${REGION}" \
             --stack-name "${STACK_NAME}" \
             --resolve-s3 \
+            --force-upload \
             --parameter-overrides Stage=staging \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
