@@ -83,12 +83,18 @@ pipeline {
           sam validate --region us-east-1
           sam build
 
-echo "== Workspace files =="
-ls -la
-echo "== samconfig.toml (if any) =="
-test -f samconfig.toml && cat samconfig.toml || echo "No samconfig.toml"
-echo "== Environment variables (filtered) =="
-env | egrep -i 'sam|s3|bucket' || true
+ws sts get-caller-identity
+
+echo "Checking IAM role LabRole exists..."
+aws iam get-role --role-name LabRole
+
+sam deploy \
+  --region "${REGION}" \
+  --stack-name "${STACK_NAME}-stg" \
+  --resolve-s3 \
+  --parameter-overrides Stage=staging \
+  --no-confirm-changeset \
+  --no-fail-on-empty-changeset
 
 
           sam deploy \
