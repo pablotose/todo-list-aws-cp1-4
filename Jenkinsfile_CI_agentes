@@ -244,11 +244,11 @@ PY
             git fetch origin
 
             git checkout master || git checkout -b master origin/master
-            git pull "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
+            git pull "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-4.git" master
 
             git merge --no-ff origin/develop -m "Promote: merge develop into master"
 
-            git push "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
+            git push "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-4.git" master
           '''
         }
       }
