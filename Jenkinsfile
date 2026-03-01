@@ -216,43 +216,38 @@ PY
       }
     }
 
-    stage('Promote (merge develop -> master)') {
-      when { branch 'develop' }
-      steps {
-        sh '''#!/bin/bash
-          set -e
-          echo "== AGENT INFO (Promote) =="
-          echo "NODE_NAME=$NODE_NAME"
-          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
-          whoami
-          hostname
-          pwd
-          echo "=========================="
-        '''
+stage('Promote (merge develop -> master)') {
+  when { branch 'develop' }
+  steps {
+    checkout(scm)
 
-        // Asegura repo con .git en workspace
-        checkout(scm)
+    withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PAT')]) {
+      sh '''#!/bin/bash
+        set -euxo pipefail
 
-        withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PAT')]) {
-          sh '''#!/bin/bash
-            set -euxo pipefail
+        git config user.email "jenkins@local"
+        git config user.name  "jenkins"
 
-            git config user.email "jenkins@local"
-            git config user.name  "jenkins"
+        # Asegurar remote con credenciales
+        git remote set-url origin "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-4.git"
 
-            git fetch origin
+        # Traer todas las ramas remotas
+        git fetch --prune origin "+refs/heads/*:refs/remotes/origin/*"
 
-            git checkout master || git checkout -b master origin/master
-            git pull "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-4.git" master
+        echo "Promoting develop -> master"
 
-            git merge --no-ff origin/develop -m "Promote: merge develop into master"
+        # Crear/actualizar rama local master desde origin/master
+        git checkout -B master origin/master
 
-            git push "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-4.git" master
-          '''
-        }
-      }
+        # Merge develop remota en master
+        git merge --no-ff origin/develop -m "Promote: merge develop into master"
+
+        # Push a master
+        git push origin master
+      '''
     }
-
+  }
+}
     // =========================
     // CD (master)
     // =========================
