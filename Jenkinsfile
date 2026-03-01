@@ -3,187 +3,165 @@ pipeline {
 
   options {
     timestamps()
+    skipDefaultCheckout(true)
   }
 
   environment {
-    // Ajusta esto si tu repo tiene otro nombre. Debido a que he tenido que crear otro repositorio.
-    REPO_URL   = "https://github.com/pablotose/todo-list-aws-cp1-3.git"
+    REPO_URL        = "https://github.com/pablotose/todo-list-aws-cp1-4.git"
+    CONFIG_REPO_URL = "https://github.com/pablotose/todo-list-aws-config.git"
 
     REGION     = "us-east-1"
     STACK_NAME = "todo-list-aws"
-    STAGE      = "Staging"
-
-    VENV       = ".venv"
-    REPORT_DIR = "reports"
   }
 
   stages {
 
     stage('Get Code') {
       steps {
-        // Aquí lo dejamos explícito para asegurar develop (como pide el enunciado).
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Get Code) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "==========================="
+        '''
+
+        // 1) Código (master)
         checkout([$class: 'GitSCM',
-          branches: [[name: '*/develop']],
+          branches: [[name: '*/master']],
           userRemoteConfigs: [[
             url: "${REPO_URL}",
             credentialsId: 'github-token'
           ]]
         ])
-      }
-    }
 
-    stage('Prepare Env') {
-      steps {
+        // 2) Config (production) -> samconfig.toml
         sh '''#!/bin/bash
           set -euxo pipefail
-
-          python3 -m venv "${VENV}"
-          source "${VENV}/bin/activate"
-
-          pip install --upgrade pip
-          pip install flake8 bandit pytest boto3 requests
-
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
-
-          mkdir -p "${REPORT_DIR}/flake8"
-          mkdir -p "${REPORT_DIR}/bandit"
+          rm -rf config-repo
+          git clone -b production "${CONFIG_REPO_URL}" config-repo
+          cp config-repo/samconfig.toml .
+          echo "== samconfig.toml (production) =="
+          cat samconfig.toml
         '''
+
+        stash name: 'src', includes: '**/*'
       }
     }
 
-    stage('Static Test') {
+    stage('Deploy (Production)') {
       steps {
         sh '''#!/bin/bash
-          set -euxo pipefail
-          source "${VENV}/bin/activate"
-
-          
-          flake8 src --exit-zero --tee --output-file "${REPORT_DIR}/flake8/flake8.txt" || true
-          bandit -r src -f txt -o "${REPORT_DIR}/bandit/bandit.txt" || true
+          set -e
+          echo "== AGENT INFO (Deploy Production) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "===================================="
         '''
-      }
-      post {
-        always {
-          // Publica los ficheros como artifacts
-          archiveArtifacts artifacts: 'reports/**', fingerprint: true
-        }
-      }
-    }
 
-    stage('Deploy (Staging)') {
-      steps {
+        deleteDir()
+        unstash 'src'
+
         sh '''#!/bin/bash
           set -euxo pipefail
 
-          # Evita que SAM inyecte s3_bucket desde samconfig.toml. Error obtenido en esta etapa
-          rm -f samconfig.toml
           rm -rf .aws-sam
-          sam validate --region us-east-1
+
+          sam validate --region "${REGION}"
           sam build
-
-aws sts get-caller-identity
-
-echo "Checking IAM role LabRole exists..."
-aws iam get-role --role-name LabRole
 
           sam deploy \
             --region "${REGION}" \
             --stack-name "${STACK_NAME}" \
-            --resolve-s3 \
-            --force-upload \
-            --parameter-overrides Stage=staging \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
 
-          # Obtener BaseUrlApi del stack (Outputs)
           BASE_URL=$(aws cloudformation describe-stacks \
             --region "${REGION}" \
             --stack-name "${STACK_NAME}" \
             --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" \
             --output text)
 
-          echo "BASE_URL=${BASE_URL}" | tee base_url.env
-          echo "API Base URL: ${BASE_URL}"
+          echo "BASE_URL=${BASE_URL}" > base_url.env
+          echo "Production API Base URL: ${BASE_URL}"
         '''
+
+        stash name: 'baseurl', includes: 'base_url.env'
       }
     }
 
-
-stage('Rest Test (curl)') {
-  steps {
-    sh '''#!/bin/bash
-      set -e
-      source base_url.env
-
-      echo "Testing API: ${BASE_URL}"
-
-      RESP_POST=$(curl -sf --max-time 10 -X POST "${BASE_URL}/todos" \
-        -H "Content-Type: application/json" \
-        -d '{ "text": "Test desde Jenkins" }')
-
-      echo "POST response: $RESP_POST"
-
-      TODO_ID=$(python3 - "$RESP_POST" <<'PY'
-import json, sys
-raw = sys.argv[1].strip()
-j = json.loads(raw)
-if isinstance(j, dict) and "body" in j and isinstance(j["body"], str):
-    j = json.loads(j["body"])
-print(j.get("id",""))
-PY
-)
-
-      echo "TODO_ID=$TODO_ID"
-      [ -n "$TODO_ID" ]
-
-      curl -sf --max-time 10 "${BASE_URL}/todos"
-      echo "GET /todos OK"
-
-      curl -sf --max-time 10 "${BASE_URL}/todos/${TODO_ID}"
-      echo "GET /todos/{id} OK"
-
-      curl -sf --max-time 10 -X DELETE "${BASE_URL}/todos/${TODO_ID}"
-      echo "DELETE OK"
-
-      echo "✅ REST TEST PASSED (CRUD completo)"
-    '''
-  }
-}
-
-    stage('Promote') {
+    stage('Rest Test (Read Only) (agent: rest)') {
+      agent { label 'rest' }
       steps {
-        withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PAT')]) {
-          sh '''#!/bin/bash
-            set -euxo pipefail
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Rest Test Read-Only) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "======================================="
+        '''
 
-            git config user.email "jenkins@local"
-            git config user.name  "jenkins"
+        deleteDir()
+        unstash 'src'
+        unstash 'baseurl'
 
-            # Asegura tener refs al día
-            git fetch origin
+        sh '''#!/bin/bash
+          set -e
+          source base_url.env
 
-            # Cambiar a master
-            git checkout master || git checkout -b master origin/master
+          echo "Testing production API (read-only): ${BASE_URL}"
+          echo ""
 
-            # Pull master autenticado
-            git pull "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
+          echo "== GET /todos =="
+          RESP=$(curl -sS --max-time 15 -w "\nHTTP:%{http_code}\n" "${BASE_URL}/todos")
+          echo "$RESP"
 
-            # Merge develop -> master
-            git merge --no-ff origin/develop -m "Promote: merge develop into master"
+          HTTP=$(echo "$RESP" | tail -n1 | sed 's/HTTP://')
+          if [ "$HTTP" -lt 200 ] || [ "$HTTP" -ge 300 ]; then
+            echo "ERROR: GET /todos failed"
+            exit 1
+          fi
 
-            # Push master
-            git push "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
-          '''
-        }
+          BODY=$(echo "$RESP" | head -n -1)
+
+          # Si hay elementos, probar GET por id (solo lectura)
+          if [ "$BODY" != "[]" ]; then
+            ID=$(echo "$BODY" | python3 -c "import sys, json; print(json.load(sys.stdin)[0]['id'])")
+
+            echo ""
+            echo "== GET /todos/${ID} =="
+            RESP2=$(curl -sS --max-time 15 -w "\nHTTP:%{http_code}\n" "${BASE_URL}/todos/${ID}")
+            echo "$RESP2"
+
+            HTTP2=$(echo "$RESP2" | tail -n1 | sed 's/HTTP://')
+            if [ "$HTTP2" -lt 200 ] || [ "$HTTP2" -ge 300 ]; then
+              echo "ERROR: GET /todos/{id} failed"
+              exit 1
+            fi
+          else
+            echo ""
+            echo "No hay TODOs en producción; se omite GET /todos/{id} (solo lectura)."
+          fi
+
+          echo ""
+          echo "✅ REST READ-ONLY TEST PASSED"
+        '''
       }
     }
   }
 
   post {
     always {
-      echo "Pipeline finished with status: ${currentBuild.currentResult}"
+      echo "CD Pipeline finished with status: ${currentBuild.currentResult}"
     }
   }
 }
