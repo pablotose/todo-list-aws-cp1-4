@@ -3,15 +3,17 @@ pipeline {
 
   options {
     timestamps()
+    skipDefaultCheckout(true)
   }
 
   environment {
-    // Ajusta esto si tu repo tiene otro nombre. Debido a que he tenido que crear otro repositorio.
-    REPO_URL   = "https://github.com/pablotose/todo-list-aws-cp1-3.git"
+    // Repo código
+    REPO_URL        = "https://github.com/pablotose/todo-list-aws-cp1-4.git"
+    // Repo config (samconfig.toml separado)
+    CONFIG_REPO_URL = "https://github.com/pablotose/todo-list-aws-config.git"
 
     REGION     = "us-east-1"
     STACK_NAME = "todo-list-aws"
-    STAGE      = "Staging"
 
     VENV       = ".venv"
     REPORT_DIR = "reports"
@@ -21,7 +23,18 @@ pipeline {
 
     stage('Get Code') {
       steps {
-        // Aquí lo dejamos explícito para asegurar develop (como pide el enunciado).
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Get Code) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "==========================="
+        '''
+
+        // 1) Código (develop)
         checkout([$class: 'GitSCM',
           branches: [[name: '*/develop']],
           userRemoteConfigs: [[
@@ -29,11 +42,39 @@ pipeline {
             credentialsId: 'github-token'
           ]]
         ])
+
+        // 2) Config (staging) -> samconfig.toml
+        sh '''#!/bin/bash
+          set -euxo pipefail
+          rm -rf config-repo
+          git clone -b staging "${CONFIG_REPO_URL}" config-repo
+          cp config-repo/samconfig.toml .
+          echo "== samconfig.toml (staging) =="
+          cat samconfig.toml
+        '''
+
+        // 3) Compartir workspace a agentes
+        stash name: 'src', includes: '**/*'
       }
     }
 
-    stage('Prepare Env') {
+    stage('Static Test (agent: static)') {
+      agent { label 'static' }
       steps {
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Static Test) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "================================"
+        '''
+
+        deleteDir()
+        unstash 'src'
+
         sh '''#!/bin/bash
           set -euxo pipefail
 
@@ -41,32 +82,18 @@ pipeline {
           source "${VENV}/bin/activate"
 
           pip install --upgrade pip
-          pip install flake8 bandit pytest boto3 requests
-
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt
-          fi
+          pip install flake8 bandit
 
           mkdir -p "${REPORT_DIR}/flake8"
           mkdir -p "${REPORT_DIR}/bandit"
-        '''
-      }
-    }
 
-    stage('Static Test') {
-      steps {
-        sh '''#!/bin/bash
-          set -euxo pipefail
-          source "${VENV}/bin/activate"
-
-          
+          # Solo /src (como pide el enunciado)
           flake8 src --exit-zero --tee --output-file "${REPORT_DIR}/flake8/flake8.txt" || true
           bandit -r src -f txt -o "${REPORT_DIR}/bandit/bandit.txt" || true
         '''
       }
       post {
         always {
-          // Publica los ficheros como artifacts
           archiveArtifacts artifacts: 'reports/**', fingerprint: true
         }
       }
@@ -75,57 +102,88 @@ pipeline {
     stage('Deploy (Staging)') {
       steps {
         sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Deploy Staging) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "================================="
+        '''
+
+        deleteDir()
+        unstash 'src'
+
+        sh '''#!/bin/bash
           set -euxo pipefail
 
-          # Evita que SAM inyecte s3_bucket desde samconfig.toml. Error obtenido en esta etapa
-          rm -f samconfig.toml
           rm -rf .aws-sam
-          sam validate --region us-east-1
+
+          sam validate --region "${REGION}"
           sam build
 
-aws sts get-caller-identity
+          # (Útil para el log)
+          aws sts get-caller-identity
+          echo "Checking IAM role LabRole exists..."
+          aws iam get-role --role-name LabRole
 
-echo "Checking IAM role LabRole exists..."
-aws iam get-role --role-name LabRole
-
+          # Deploy NO interactivo (usa samconfig.toml descargado desde repo config)
           sam deploy \
             --region "${REGION}" \
             --stack-name "${STACK_NAME}" \
-            --resolve-s3 \
-            --force-upload \
-            --parameter-overrides Stage=staging \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset
 
-          # Obtener BaseUrlApi del stack (Outputs)
           BASE_URL=$(aws cloudformation describe-stacks \
             --region "${REGION}" \
             --stack-name "${STACK_NAME}" \
             --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" \
             --output text)
 
-          echo "BASE_URL=${BASE_URL}" | tee base_url.env
+          echo "BASE_URL=${BASE_URL}" > base_url.env
           echo "API Base URL: ${BASE_URL}"
         '''
+
+        // Pasar URL al agente REST
+        stash name: 'baseurl', includes: 'base_url.env'
       }
     }
 
+    stage('Rest Test (curl) (agent: rest)') {
+      agent { label 'rest' }
+      steps {
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Rest Test) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "============================"
+        '''
 
-stage('Rest Test (curl)') {
-  steps {
-    sh '''#!/bin/bash
-      set -e
-      source base_url.env
+        deleteDir()
+        unstash 'src'
+        unstash 'baseurl'
 
-      echo "Testing API: ${BASE_URL}"
+        sh '''#!/bin/bash
+          set -e
+          source base_url.env
 
-      RESP_POST=$(curl -sf --max-time 10 -X POST "${BASE_URL}/todos" \
-        -H "Content-Type: application/json" \
-        -d '{ "text": "Test desde Jenkins" }')
+          echo "Testing API: ${BASE_URL}"
+          echo ""
 
-      echo "POST response: $RESP_POST"
+          # POST
+          RESP_POST=$(curl -sf --max-time 15 -X POST "${BASE_URL}/todos" \
+            -H "Content-Type: application/json" \
+            -d '{ "text": "Test desde Jenkins" }')
 
-      TODO_ID=$(python3 - "$RESP_POST" <<'PY'
+          echo "POST response: $RESP_POST"
+
+          # Extraer TODO_ID (soporta {"statusCode":200,"body":"{...}"})
+          TODO_ID=$(python3 - "$RESP_POST" <<'PY'
 import json, sys
 raw = sys.argv[1].strip()
 j = json.loads(raw)
@@ -134,26 +192,66 @@ if isinstance(j, dict) and "body" in j and isinstance(j["body"], str):
 print(j.get("id",""))
 PY
 )
+          echo "TODO_ID=$TODO_ID"
+          [ -n "$TODO_ID" ]
 
-      echo "TODO_ID=$TODO_ID"
-      [ -n "$TODO_ID" ]
+          # GET lista (mostrar salida)
+          echo "== GET /todos =="
+          curl -sS --max-time 15 "${BASE_URL}/todos"
+          echo ""
+          echo "GET /todos OK"
+          echo ""
 
-      curl -sf --max-time 10 "${BASE_URL}/todos"
-      echo "GET /todos OK"
+          # GET por id (mostrar salida)
+          echo "== GET /todos/${TODO_ID} =="
+          curl -sS --max-time 15 "${BASE_URL}/todos/${TODO_ID}"
+          echo ""
+          echo "GET /todos/{id} OK"
+          echo ""
 
-      curl -sf --max-time 10 "${BASE_URL}/todos/${TODO_ID}"
-      echo "GET /todos/{id} OK"
+          # PUT (mostrar salida)
+          echo "== PUT /todos/${TODO_ID} =="
+          curl -sS --max-time 15 -X PUT "${BASE_URL}/todos/${TODO_ID}" \
+            -H "Content-Type: application/json" \
+            -d '{ "text": "Texto actualizado desde Jenkins" }'
+          echo ""
+          echo "PUT OK"
+          echo ""
 
-      curl -sf --max-time 10 -X DELETE "${BASE_URL}/todos/${TODO_ID}"
-      echo "DELETE OK"
+          # DELETE
+          echo "== DELETE /todos/${TODO_ID} =="
+          curl -sf --max-time 15 -X DELETE "${BASE_URL}/todos/${TODO_ID}"
+          echo ""
+          echo "DELETE OK"
+          echo ""
 
-      echo "✅ REST TEST PASSED (CRUD completo)"
-    '''
-  }
-}
+          echo "✅ REST TEST PASSED (CRUD completo)"
+        '''
+      }
+    }
 
-    stage('Promote') {
+    stage('Promote (merge develop -> master)') {
       steps {
+        sh '''#!/bin/bash
+          set -e
+          echo "== AGENT INFO (Promote) =="
+          echo "NODE_NAME=$NODE_NAME"
+          echo "EXECUTOR_NUMBER=$EXECUTOR_NUMBER"
+          whoami
+          hostname
+          pwd
+          echo "=========================="
+        '''
+
+        // IMPORTANTE: stash/unstash NO incluye .git -> hacemos checkout real
+        checkout([$class: 'GitSCM',
+          branches: [[name: '*/develop']],
+          userRemoteConfigs: [[
+            url: "${REPO_URL}",
+            credentialsId: 'github-token'
+          ]]
+        ])
+
         withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GIT_USER', passwordVariable: 'GIT_PAT')]) {
           sh '''#!/bin/bash
             set -euxo pipefail
@@ -161,20 +259,14 @@ PY
             git config user.email "jenkins@local"
             git config user.name  "jenkins"
 
-            # Asegura tener refs al día
             git fetch origin
 
-            # Cambiar a master
             git checkout master || git checkout -b master origin/master
+            git pull "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-4.git" master
 
-            # Pull master autenticado
-            git pull "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
-
-            # Merge develop -> master
             git merge --no-ff origin/develop -m "Promote: merge develop into master"
 
-            # Push master
-            git push "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-3.git" master
+            git push "https://${GIT_USER}:${GIT_PAT}@github.com/pablotose/todo-list-aws-cp1-4.git" master
           '''
         }
       }
@@ -183,7 +275,7 @@ PY
 
   post {
     always {
-      echo "Pipeline finished with status: ${currentBuild.currentResult}"
+      echo "CI Pipeline finished with status: ${currentBuild.currentResult}"
     }
   }
 }
